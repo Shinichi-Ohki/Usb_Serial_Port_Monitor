@@ -25,7 +25,7 @@ SerialPortMenuApp/
 
 ### 1. SerialPortMonitor.swift
 - `/dev/cu.*` (USB通信デバイス) の検出
-- 1秒ごとのポーリングでデバイス変化を監視
+- **動的ポーリング**: 接続/切断検出時は1秒間隔、1時間安定後は5秒間隔に自動切り替え
 - `@Published` プロパティで変更を通知
 - **ポートの追加・削除を検出して NotificationCenter で通知**
   - `.serialPortAdded`: ポート接続時
@@ -202,6 +202,14 @@ cp app.icns SerialPortMenu.app/Contents/Resources/
 - **リリース**: v1.0.0 (2026-01-29)
 
 ## 更新履歴
+
+### 2026-01-29 (v1.1.0 リリース)
+- **動的ポーリング機能を実装**
+  - 接続/切断検出時: 1秒間隔でポーリング
+  - 1時間安定後: 5秒間隔に自動切り替え
+  - 新しい変化があれば即座に1秒間隔に復帰
+- CPU使用率と省電力の改善
+- 設定パラメータ: `highSpeedPollingDuration`, `fastPollingInterval`, `slowPollingInterval`
 
 ### 2026-01-29 (v1.0.0 リリース)
 - ポート接続・切断時のポップアップ通知機能を追加

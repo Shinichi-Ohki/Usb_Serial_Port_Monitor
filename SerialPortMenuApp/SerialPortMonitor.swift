@@ -16,6 +16,12 @@ class SerialPortMonitor: ObservableObject {
     private var connectionOrder: [String: Int] = [:]  // ポート名 -> 接続順序
     private var nextOrder = 0  // 次の接続順序
 
+    // 動的ポーリング設定
+    private var lastActivityTime: Date = Date()  // 最後のポート変化時刻
+    private let highSpeedPollingDuration: TimeInterval = 3600  // 高速ポーリング維持時間（1時間）
+    private let fastPollingInterval: TimeInterval = 1.0  // 高速ポーリング間隔（1秒）
+    private let slowPollingInterval: TimeInterval = 5.0  // 低速ポーリング間隔（5秒）
+
     init() {
         print("SerialPortMonitor init")
         startMonitoring()
@@ -30,15 +36,35 @@ class SerialPortMonitor: ObservableObject {
         // Initial scan
         checkForPortChanges()
 
-        // Poll every 1 second for changes
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.checkForPortChanges()
-        }
+        // 動的ポーリングを開始
+        scheduleNextPoll()
     }
 
     func stopMonitoring() {
         pollingTimer?.invalidate()
         pollingTimer = nil
+    }
+
+    // 現在のポーリング間隔を計算
+    private var currentPollingInterval: TimeInterval {
+        let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
+        return timeSinceActivity < highSpeedPollingDuration ? fastPollingInterval : slowPollingInterval
+    }
+
+    // 次のポーリングをスケジュール
+    private func scheduleNextPoll() {
+        pollingTimer?.invalidate()
+
+        let interval = currentPollingInterval
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.checkForPortChanges()
+            self?.scheduleNextPoll()  // 次のポーリングをスケジュール
+        }
+    }
+
+    // ポート変化を記録して高速ポーリングモードに移行
+    private func recordActivity() {
+        lastActivityTime = Date()
     }
 
     func checkForPortChanges() {
@@ -93,6 +119,11 @@ class SerialPortMonitor: ObservableObject {
         // Find added and removed ports
         let addedPorts = currentPorts.subtracting(knownPorts)
         let removedPorts = knownPorts.subtracting(currentPorts)
+
+        // ポート変化があった場合は高速ポーリングモードに移行
+        if !addedPorts.isEmpty || !removedPorts.isEmpty {
+            recordActivity()
+        }
 
         for port in addedPorts {
             let displayName = (port as NSString).lastPathComponent
