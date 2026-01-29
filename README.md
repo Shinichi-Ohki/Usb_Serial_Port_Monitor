@@ -179,6 +179,7 @@ MIT License. 詳細は [LICENSE](LICENSE) ファイルを参照してくださ�
 
 ## 謝辞
 
+- **アイデア元**: [@dannymodules](https://x.com/dannymodules/status/2016491542052233532) さんのWindows版タスクバー常駐アプリ
 - アプリアイコン: Nanobanana Pro
 
 ## 更新履歴

@@ -192,6 +192,15 @@ cp app.icns SerialPortMenu.app/Contents/Resources/
 5. **配布用の署名**: 公開用のコード署名と公证
 6. **通知の音**: 接続・切断時に音を鳴らす
 
+## アイデア出典
+
+本アプリは [@dannymodules](https://x.com/dannymodules/status/2016491542052233532) さんのWindows版タスクバー常駐アプリに着想を得て、macOS向けに実装しました。
+
+**元アイデアのこだわりポイント**（Windows版）
+1. スタートアップに登録すると黙って監視してくれる
+2. USBシリアル挿接時のみ通知。抜くときは無視
+3. リスト表示すると、最後に挿したCOMが一番上に表示
+
 ## GitHub公開情報
 
 - **リポジトリ名**: `Usb_Serial_Port_Monitor`
