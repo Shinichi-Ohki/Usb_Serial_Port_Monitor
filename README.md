@@ -30,7 +30,7 @@ Macのメニューバーに常駐し、接続されているUSBシリアルポ�
 ## 動作環境
 
 - macOS 14.0 以降
-- Apple Silicon (M1/M2/M3) または Intel Mac
+- Apple Silicon (M1/M2/M3/M4)
 
 ## インストール
 
@@ -179,7 +179,7 @@ MIT License. 詳細は [LICENSE](LICENSE) ファイルを参照してくださ�
 
 ## 謝辞
 
-- アプリアイコン: [作者名](https://github.com/author)
+- アプリアイコン: Nanobanana Pro
 
 ## 更新履歴
 
