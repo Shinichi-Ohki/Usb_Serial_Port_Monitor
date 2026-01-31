@@ -34,7 +34,13 @@ Macのメニューバーに常駐し、接続されているUSBシリアルポ�
 
 ### リリース版からインストール
 
-[Releases](https://github.com/Shinichi-Ohki/Usb_Serial_Port_Monitor/releases) から最新の `Usb_Serial_Port_Monitor.app.zip` をダウンロードして展開し、Applications フォルダにコピーしてください。
+[Releases](https://github.com/Shinichi-Ohki/Usb_Serial_Port_Monitor/releases) から最新の `Usb_Serial_Port_Monitor-v*.zip` をダウンロードして展開し、Applications フォルダにコピーしてください。
+
+⚠️ **初回起動時の注意**: コード署名されていないため、macOSのGatekeeperにブロックされます。以下のコマンドで検疫属性を解除してから起動してください：
+
+```bash
+xattr -cr SerialPortMenuApp.app
+```
 
 ### Homebrew でインストール
 
