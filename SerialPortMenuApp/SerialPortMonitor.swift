@@ -17,11 +17,13 @@ class SerialPortMonitor: ObservableObject {
     private var nextOrder = 0  // 次の接続順序
     private var isFirstScan = true  // 初回スキャンフラグ
 
-    // 動的ポーリング設定
-    private var lastActivityTime: Date = Date()  // 最後のポート変化時刻
-    private let highSpeedPollingDuration: TimeInterval = 3600  // 高速ポーリング維持時間（1時間）
-    private let fastPollingInterval: TimeInterval = 1.0  // 高速ポーリング間隔（1秒）
-    private let slowPollingInterval: TimeInterval = 5.0  // 低速ポーリング間隔（5秒）
+    // IOKit通知
+    private var notificationPort: IONotificationPortRef?
+    private var matchedIterator: io_iterator_t = 0
+    private var terminatedIterator: io_iterator_t = 0
+
+    // フォールバックポーリング（IOKit通知の補完用）
+    private let fallbackPollingInterval: TimeInterval = 30.0
 
     init() {
         print("SerialPortMonitor init")
@@ -37,35 +39,102 @@ class SerialPortMonitor: ObservableObject {
         // Initial scan
         checkForPortChanges()
 
-        // 動的ポーリングを開始
-        scheduleNextPoll()
+        // IOKit通知をセットアップ
+        setupIOKitNotifications()
+
+        // フォールバックポーリング（万一IOKit通知を取りこぼした場合の保険）
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: fallbackPollingInterval, repeats: true) { [weak self] _ in
+            self?.checkForPortChanges()
+        }
     }
 
     func stopMonitoring() {
         pollingTimer?.invalidate()
         pollingTimer = nil
-    }
 
-    // 現在のポーリング間隔を計算
-    private var currentPollingInterval: TimeInterval {
-        let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
-        return timeSinceActivity < highSpeedPollingDuration ? fastPollingInterval : slowPollingInterval
-    }
-
-    // 次のポーリングをスケジュール
-    private func scheduleNextPoll() {
-        pollingTimer?.invalidate()
-
-        let interval = currentPollingInterval
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            self?.checkForPortChanges()
-            self?.scheduleNextPoll()  // 次のポーリングをスケジュール
+        if matchedIterator != 0 {
+            IOObjectRelease(matchedIterator)
+            matchedIterator = 0
+        }
+        if terminatedIterator != 0 {
+            IOObjectRelease(terminatedIterator)
+            terminatedIterator = 0
+        }
+        if let port = notificationPort {
+            IONotificationPortDestroy(port)
+            notificationPort = nil
         }
     }
 
-    // ポート変化を記録して高速ポーリングモードに移行
-    private func recordActivity() {
-        lastActivityTime = Date()
+    // MARK: - IOKit通知
+
+    private func setupIOKitNotifications() {
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else {
+            print("Failed to create IONotificationPort")
+            return
+        }
+        notificationPort = port
+
+        // RunLoopに登録
+        let runLoopSource = IONotificationPortGetRunLoopSource(port).takeUnretainedValue()
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .defaultMode)
+
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+
+        // 接続通知 (kIOMatchedNotification)
+        if let matching = IOServiceMatching(kIOSerialBSDServiceValue) {
+            let kr = IOServiceAddMatchingNotification(
+                port,
+                kIOMatchedNotification,
+                matching,
+                { (refcon, iterator) in
+                    let monitor = Unmanaged<SerialPortMonitor>.fromOpaque(refcon!).takeUnretainedValue()
+                    // イテレータを空にする（これをしないと次の通知が来ない）
+                    monitor.drainIterator(iterator)
+                    monitor.checkForPortChanges()
+                },
+                selfPtr,
+                &matchedIterator
+            )
+            if kr == KERN_SUCCESS {
+                // 初回: イテレータを空にしてarmする
+                drainIterator(matchedIterator)
+                print("IOKit matched notification registered")
+            } else {
+                print("Failed to register matched notification: \(kr)")
+            }
+        }
+
+        // 切断通知 (kIOTerminatedNotification)
+        if let matching = IOServiceMatching(kIOSerialBSDServiceValue) {
+            let kr = IOServiceAddMatchingNotification(
+                port,
+                kIOTerminatedNotification,
+                matching,
+                { (refcon, iterator) in
+                    let monitor = Unmanaged<SerialPortMonitor>.fromOpaque(refcon!).takeUnretainedValue()
+                    monitor.drainIterator(iterator)
+                    monitor.checkForPortChanges()
+                },
+                selfPtr,
+                &terminatedIterator
+            )
+            if kr == KERN_SUCCESS {
+                drainIterator(terminatedIterator)
+                print("IOKit terminated notification registered")
+            } else {
+                print("Failed to register terminated notification: \(kr)")
+            }
+        }
+    }
+
+    /// イテレータを空になるまで回す（通知を再armするために必須）
+    private func drainIterator(_ iterator: io_iterator_t) {
+        var service = IOIteratorNext(iterator)
+        while service != 0 {
+            IOObjectRelease(service)
+            service = IOIteratorNext(iterator)
+        }
     }
 
     func checkForPortChanges() {
@@ -107,9 +176,6 @@ class SerialPortMonitor: ObservableObject {
 
         // 変化がなければ何もしない
         guard !addedPorts.isEmpty || !removedPorts.isEmpty else { return }
-
-        // ポート変化があった場合は高速ポーリングモードに移行
-        recordActivity()
 
         // knownPortsを更新
         for port in addedPorts {
