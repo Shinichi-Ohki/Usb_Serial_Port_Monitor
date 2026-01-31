@@ -15,6 +15,7 @@ class SerialPortMonitor: ObservableObject {
     private var knownPorts: Set<String> = []
     private var connectionOrder: [String: Int] = [:]  // ポート名 -> 接続順序
     private var nextOrder = 0  // 次の接続順序
+    private var isFirstScan = true  // 初回スキャンフラグ
 
     // 動的ポーリング設定
     private var lastActivityTime: Date = Date()  // 最後のポート変化時刻
@@ -70,43 +71,27 @@ class SerialPortMonitor: ObservableObject {
     func checkForPortChanges() {
         var currentPorts: Set<String> = []
 
-        // Scan /dev/cu.* for ports
-        if let devPaths = FileManager.default.enumerator(atPath: "/dev") {
-            while let path = devPaths.nextObject() as? String {
-                if path.hasPrefix("cu.") {
-                    currentPorts.insert("/dev/\(path)")
-                }
-            }
-        }
-
-        // Use IOKit to get more detailed info
-        let masterPort = mach_port_t(0)
+        // IOKitでシリアルポートを検出
         let classesToMatch = IOServiceMatching(kIOSerialBSDServiceValue)
 
         if let matching = classesToMatch {
             var iter: io_iterator_t = 0
-            let result = IOServiceGetMatchingServices(masterPort, matching, &iter)
+            let result = IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iter)
 
             if result == KERN_SUCCESS {
-                var service: io_object_t
-                service = IOIteratorNext(iter)
+                var service: io_object_t = IOIteratorNext(iter)
 
                 while service != 0 {
-                    var deviceFilePathCF: CFString?
                     let deviceFilePathKey = kIOCalloutDeviceKey as CFString
-                    let propertyResult = IORegistryEntryCreateCFProperty(
+                    if let propertyResult = IORegistryEntryCreateCFProperty(
                         service,
                         deviceFilePathKey,
                         kCFAllocatorDefault,
                         0
-                    )
-
-                    if let propertyResult = propertyResult {
-                        deviceFilePathCF = (propertyResult.takeRetainedValue() as! CFString)
-                    }
-
-                    if let devicePath = deviceFilePathCF as String? {
-                        currentPorts.insert(devicePath)
+                    ) {
+                        if let devicePath = propertyResult.takeRetainedValue() as? String {
+                            currentPorts.insert(devicePath)
+                        }
                     }
 
                     IOObjectRelease(service)
@@ -120,22 +105,36 @@ class SerialPortMonitor: ObservableObject {
         let addedPorts = currentPorts.subtracting(knownPorts)
         let removedPorts = knownPorts.subtracting(currentPorts)
 
+        // 変化がなければ何もしない
+        guard !addedPorts.isEmpty || !removedPorts.isEmpty else { return }
+
         // ポート変化があった場合は高速ポーリングモードに移行
-        if !addedPorts.isEmpty || !removedPorts.isEmpty {
-            recordActivity()
+        recordActivity()
+
+        // knownPortsを更新
+        for port in addedPorts {
+            knownPorts.insert(port)
+            connectionOrder[port] = nextOrder
+            nextOrder += 1
+        }
+        for port in removedPorts {
+            knownPorts.remove(port)
+            connectionOrder.removeValue(forKey: port)
         }
 
+        // メニューを1回だけ更新
+        updateSerialPorts()
+
+        // 初回スキャンでは通知を出さない
+        if isFirstScan {
+            isFirstScan = false
+            return
+        }
+
+        // 通知を送信
         for port in addedPorts {
             let displayName = (port as NSString).lastPathComponent
             print("Port added: \(displayName)")
-            knownPorts.insert(port)
-
-            // 新規ポートには接続順序を割り当て
-            connectionOrder[port] = nextOrder
-            nextOrder += 1
-
-            updateSerialPorts()
-
             NotificationCenter.default.post(
                 name: .serialPortAdded,
                 object: self,
@@ -146,13 +145,6 @@ class SerialPortMonitor: ObservableObject {
         for port in removedPorts {
             let displayName = (port as NSString).lastPathComponent
             print("Port removed: \(displayName)")
-            knownPorts.remove(port)
-
-            // 削除時に順序も削除
-            connectionOrder.removeValue(forKey: port)
-
-            updateSerialPorts()
-
             NotificationCenter.default.post(
                 name: .serialPortRemoved,
                 object: self,

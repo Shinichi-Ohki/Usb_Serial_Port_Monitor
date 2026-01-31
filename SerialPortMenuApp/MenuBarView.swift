@@ -1,10 +1,11 @@
 import AppKit
+import Foundation
 import Combine
 
 class MenuBarManager: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var monitor: SerialPortMonitor?
-    var cancellables = Set<AnyCancellable>()
+    private var cancellables = Set<AnyCancellable>()
 
     // Custom popup window for notifications
     private var popupWindow: NSWindow?
@@ -150,7 +151,14 @@ class MenuBarManager: NSObject, ObservableObject {
         let iconImageView = NSImageView(frame: NSRect(x: 15, y: 25, width: 30, height: 30))
         if let iconImage = NSImage(systemSymbolName: icon, accessibilityDescription: nil) {
             iconImageView.image = iconImage
-            iconImageView.contentTintColor = icon == "plus.circle.fill" ? .systemGreen : .systemRed
+            switch icon {
+            case "plus.circle.fill":
+                iconImageView.contentTintColor = .systemGreen
+            case "doc.on.clipboard.fill":
+                iconImageView.contentTintColor = .systemBlue
+            default:
+                iconImageView.contentTintColor = .systemRed
+            }
         }
         effectView.addSubview(iconImageView)
 
@@ -215,6 +223,9 @@ class MenuBarManager: NSObject, ObservableObject {
         pasteboard.setString(portPath, forType: .string)
 
         print("Copied to clipboard: \(portPath)")
+
+        let displayName = (portPath as NSString).lastPathComponent
+        showPopup(title: "Copied to Clipboard", message: displayName, icon: "doc.on.clipboard.fill")
     }
 
     @objc private func refreshPorts() {
