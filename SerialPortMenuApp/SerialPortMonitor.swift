@@ -11,7 +11,6 @@ extension Notification.Name {
 class SerialPortMonitor: ObservableObject {
     @Published var serialPorts: [String] = []
 
-    private var pollingTimer: Timer?
     private var knownPorts: Set<String> = []
     private var connectionOrder: [String: Int] = [:]  // ポート名 -> 接続順序
     private var nextOrder = 0  // 次の接続順序
@@ -21,9 +20,6 @@ class SerialPortMonitor: ObservableObject {
     private var notificationPort: IONotificationPortRef?
     private var matchedIterator: io_iterator_t = 0
     private var terminatedIterator: io_iterator_t = 0
-
-    // フォールバックポーリング（IOKit通知の補完用）
-    private let fallbackPollingInterval: TimeInterval = 30.0
 
     init() {
         print("SerialPortMonitor init")
@@ -41,17 +37,9 @@ class SerialPortMonitor: ObservableObject {
 
         // IOKit通知をセットアップ
         setupIOKitNotifications()
-
-        // フォールバックポーリング（万一IOKit通知を取りこぼした場合の保険）
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: fallbackPollingInterval, repeats: true) { [weak self] _ in
-            self?.checkForPortChanges()
-        }
     }
 
     func stopMonitoring() {
-        pollingTimer?.invalidate()
-        pollingTimer = nil
-
         if matchedIterator != 0 {
             IOObjectRelease(matchedIterator)
             matchedIterator = 0
